@@ -1,8 +1,10 @@
 import json
+import re
 
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
@@ -50,14 +52,28 @@ def render(
 
     # -- risks table --
     if risks:
-        console.print(f"[bold]Risks[/bold]  {risk_count} found\n")
-        table = Table(show_header=True, header_style="bold", expand=False)
-        table.add_column("Sev", width=4, no_wrap=True)
-        table.add_column("Location", no_wrap=True)
-        table.add_column("Description", no_wrap=False, max_width=80)
-        table.add_column("Confidence", width=14, no_wrap=True)
+        # split: visible (confidence > 0.6 or rule-based) vs hidden
+        show_all = getattr(args, "show_all", False)
+        visible, hidden = _split_by_confidence(risks, show_all)
 
-        for r in risks:
+        rule_count = sum(1 for r in risks if r.source == "rule")
+        llm_count = risk_count - rule_count
+        parts = []
+        if rule_count:
+            parts.append(f"[bold red]Rules: {rule_count}[/bold red]")
+        if llm_count:
+            parts.append(f"[bold yellow]LLM: {llm_count}[/bold yellow]")
+        console.print(f"[bold]Risks[/bold]  {'  |  '.join(parts)}\n")
+        table = Table(
+            show_header=True, header_style="bold",
+            width=120, expand=False,
+        )
+        table.add_column("Sev", width=6, no_wrap=True)
+        table.add_column("Location", no_wrap=True)
+        table.add_column("Description", no_wrap=False, ratio=1)
+        table.add_column("Confidence", width=16, no_wrap=True)
+
+        for r in visible:
             sev_color, sev_label = _severity_style(r.severity)
 
             loc = Text(f"{r.file}:{r.line}")
@@ -67,12 +83,13 @@ def render(
             if r.source == "rule":
                 conf_text = "N/A (rule)"
 
-            # dim low-confidence LLM suggestions
+            # mark low-confidence as uncertain
             is_low_conf = False
             if r.source == "llm":
                 try:
                     if float(r.confidence) < 0.8:
                         is_low_conf = True
+                        conf_text = f"{r.confidence} (uncertain)"
                 except (ValueError, TypeError):
                     pass
 
@@ -87,8 +104,13 @@ def render(
 
         console.print(table)
 
-        # -- fix suggestions --
-        fixes = [r for r in risks if r.fix]
+        if hidden:
+            console.print(
+                f"[dim]... {len(hidden)} 个低置信度建议已隐藏，使用 --show-all 查看全部[/dim]"
+            )
+
+        # -- fix suggestions (only for visible risks) --
+        fixes = [r for r in visible if r.fix]
         if fixes:
             console.print()
             console.print("[bold]Fix Suggestions[/bold]\n")
@@ -99,7 +121,13 @@ def render(
                     f"[underline]{r.file}:{r.line}[/underline]"
                 )
                 console.print(f"  {r.message}")
-                console.print(f"  [green]Fix:[/green] {r.fix}")
+                # strip markdown fences and render with syntax highlighting
+                fix_text = _strip_code_fences(r.fix)
+                if _looks_like_code(fix_text):
+                    lang = _detect_lang(r.file)
+                    console.print(Syntax(fix_text, lang, theme="monokai", padding=(0, 2)))
+                else:
+                    console.print(f"  [green]Fix:[/green] {fix_text}")
                 console.print()
 
     elif not risks:
@@ -107,9 +135,19 @@ def render(
 
     # -- commit message hint --
     if llm and llm.commit_message:
+        high_risks = [r for r in risks if r.severity.upper() == "HIGH"]
+        if high_risks:
+            console.print()
+            console.print("[bold red]存在 HIGH 风险，建议修复后再提交。[/bold red]")
+
         console.print()
         console.print("[bold]Suggested commit message:[/bold]")
         console.print(f"  {llm.commit_message}")
+        # show ready-to-copy git commit command
+        escaped_msg = llm.commit_message.replace('"', '\\"')
+        console.print()
+        console.print("[dim]复制执行：[/dim]")
+        console.print(f"  [cyan]git commit -m \"{escaped_msg}\"[/cyan]")
 
     # -- skipped / truncated --
     if diff.skipped_files:
@@ -174,3 +212,61 @@ def _severity_style(severity: str) -> tuple[str, str]:
     elif s == "MEDIUM":
         return "yellow", "MED"
     return "dim", "LOW"
+
+
+def _split_by_confidence(
+    risks: list[Risk], show_all: bool,
+) -> tuple[list[Risk], list[Risk]]:
+    """Split risks into visible and hidden based on confidence threshold."""
+    if show_all:
+        return risks, []
+    visible: list[Risk] = []
+    hidden: list[Risk] = []
+    for r in risks:
+        # rule-based risks are always visible
+        if r.source == "rule":
+            visible.append(r)
+            continue
+        try:
+            conf = float(r.confidence)
+            if conf <= 0.6:
+                hidden.append(r)
+            else:
+                visible.append(r)
+        except (ValueError, TypeError):
+            visible.append(r)
+    return visible, hidden
+
+
+def _strip_code_fences(text: str) -> str:
+    """Remove ```lang ... ``` markdown fences."""
+    text = text.strip()
+    text = re.sub(r"^```\w*\n?", "", text)
+    text = re.sub(r"\n?```$", "", text)
+    return text.strip()
+
+
+def _looks_like_code(text: str) -> bool:
+    """Heuristic: if it has multiple lines or indentation, treat as code."""
+    lines = text.split("\n")
+    if len(lines) >= 2:
+        return True
+    if text.startswith("    ") or text.startswith("\t"):
+        return True
+    return False
+
+
+def _detect_lang(filepath: str) -> str:
+    """Guess language from file extension."""
+    ext_map = {
+        ".py": "python", ".js": "javascript", ".ts": "typescript",
+        ".jsx": "jsx", ".tsx": "tsx", ".go": "go", ".rs": "rust",
+        ".java": "java", ".kt": "kotlin", ".rb": "ruby",
+        ".sh": "bash", ".yml": "yaml", ".yaml": "yaml",
+        ".json": "json", ".html": "html", ".css": "css",
+        ".sql": "sql", ".c": "c", ".cpp": "cpp", ".h": "c",
+    }
+    for ext, lang in ext_map.items():
+        if filepath.endswith(ext):
+            return lang
+    return "text"
