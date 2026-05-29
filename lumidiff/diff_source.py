@@ -50,7 +50,7 @@ def should_ignore(filepath: str) -> bool:
 @dataclass
 class FileDiff:
     path: str
-    patch: str | None          # None when GitHub truncates the diff
+    patch: str | None = None   # None when GitHub truncates the diff
     additions: int = 0
     deletions: int = 0
     truncated: bool = False    # patch was null from GitHub API
@@ -86,8 +86,10 @@ def parse_pr_url(url: str) -> tuple[str, str, int] | None:
 def get_staged_diff(context_lines: int = 10) -> DiffResult:
     """Run git diff --staged and return DiffResult."""
     cmd = ["git", "diff", "--staged", f"-U{context_lines}"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    raw = result.stdout
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    raw = result.stdout or ""
 
     files = _parse_diff_files(raw)
     additions = sum(f.additions for f in files)
