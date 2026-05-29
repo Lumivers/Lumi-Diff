@@ -39,13 +39,8 @@ class LLMResult:
 
 # -- config --
 
-_MODEL_BASES = {
-    "deepseek-chat": "https://api.deepseek.com/v1",
-    "deepseek-reasoner": "https://api.deepseek.com/v1",
-    "moonshot-v1-8k": "https://api.moonshot.cn/v1",
-    "moonshot-v1-32k": "https://api.moonshot.cn/v1",
-    "moonshot-v1-128k": "https://api.moonshot.cn/v1",
-}
+DEFAULT_MODEL = "deepseek-v4-pro"
+DEFAULT_API_BASE = "https://api.deepseek.com"
 
 
 def _build_system_prompt(is_local_mode: bool) -> str:
@@ -78,10 +73,12 @@ def _build_system_prompt(is_local_mode: bool) -> str:
 
 def analyze(
     diff_text: str,
-    model: str = "deepseek-chat",
+    model: str | None = None,
     is_local: bool = False,
 ) -> LLMResult:
     """Send diff to LLM and return structured result."""
+    if model is None:
+        model = os.environ.get("LUMIDIFF_MODEL", DEFAULT_MODEL)
     api_key = os.environ.get("LUMIDIFF_API_KEY", "")
     if not api_key:
         return LLMResult(
@@ -89,10 +86,7 @@ def analyze(
             parse_error="missing API key",
         )
 
-    api_base = os.environ.get(
-        "LUMIDIFF_API_BASE",
-        _MODEL_BASES.get(model, "https://api.deepseek.com/v1"),
-    )
+    api_base = os.environ.get("LUMIDIFF_API_BASE", DEFAULT_API_BASE)
 
     # truncate diff to avoid blowing context
     max_chars = 8000

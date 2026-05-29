@@ -4,7 +4,7 @@ import sys
 
 from lumidiff.diff_source import get_staged_diff, get_pr_diff
 from lumidiff.rule_engine import scan_all
-from lumidiff.llm_client import analyze
+from lumidiff.llm_client import analyze, DEFAULT_MODEL, DEFAULT_API_BASE
 from lumidiff.reporter import render
 
 
@@ -13,13 +13,26 @@ def main() -> None:
         prog="lumidiff",
         description="AI-PR-Review CLI — analyze staged diff or GitHub PR",
     )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # lumidiff model
+    model_parser = subparsers.add_parser("model", help="查看或切换当前 LLM 模型配置")
+    model_parser.add_argument(
+        "name", nargs="?", default=None,
+        help="要切换到的模型名称（留空则查看当前配置）",
+    )
+    model_parser.add_argument(
+        "--base-url", type=str, default=None,
+        help="API Base URL",
+    )
+
     parser.add_argument(
         "--pr", type=str, default=None,
         help="GitHub PR URL to analyze",
     )
     parser.add_argument(
-        "--model", type=str, default="deepseek-chat",
-        help="LLM model name (default: deepseek-chat)",
+        "--model", type=str, default=DEFAULT_MODEL,
+        help=f"LLM model name (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--json", action="store_true",
@@ -38,6 +51,11 @@ def main() -> None:
         help="Lines of context around hunks (default: 10)",
     )
     args = parser.parse_args()
+
+    # handle `lumidiff model` subcommand
+    if args.command == "model":
+        _show_or_switch_model(args)
+        return
 
     # 1. get diff
     if args.pr:
@@ -80,6 +98,33 @@ def main() -> None:
         _ci_output(risks)
     else:
         render(diff, risks, llm_result, args)
+
+
+def _show_or_switch_model(args) -> None:
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+    current_model = os.environ.get("LUMIDIFF_MODEL", DEFAULT_MODEL)
+    current_base = os.environ.get("LUMIDIFF_API_BASE", DEFAULT_API_BASE)
+
+    if args.name:
+        os.environ["LUMIDIFF_MODEL"] = args.name
+        if args.base_url:
+            os.environ["LUMIDIFF_API_BASE"] = args.base_url
+        console.print(f"[green]已切换模型:[/green] {args.name}")
+        if args.base_url:
+            console.print(f"[green]API Base:[/green] {args.base_url}")
+    else:
+        table = Table(title="当前 LLM 配置", show_header=False, border_style="cyan")
+        table.add_column("Key", style="bold")
+        table.add_column("Value")
+        table.add_row("模型", current_model)
+        table.add_row("API Base", current_base)
+        table.add_row("API Key", "***已设置***" if os.environ.get("LUMIDIFF_API_KEY") else "[red]未设置[/red]")
+        console.print(table)
+        console.print()
+        console.print("[dim]切换模型: lumidiff model <name> --base-url <url>[/dim]")
 
 
 def _ci_output(risks: list) -> None:
