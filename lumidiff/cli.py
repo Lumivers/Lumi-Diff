@@ -31,6 +31,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
         "--context-lines", type=int, default=10,
         help="Lines of context around hunks (default: 10)",
     )
+    parser.add_argument(
+        "--show-all", action="store_true",
+        help="显示所有建议，包括低置信度（默认隐藏 confidence <= 0.6 的建议）",
+    )
 
 
 def main() -> None:
@@ -53,6 +57,10 @@ def main() -> None:
     local_parser = subparsers.add_parser(
         "local",
         help="分析暂存区变更（git add 之后、commit 之前）",
+    )
+    local_parser.add_argument(
+        "--stage", action="store_true",
+        help="自动执行 git add -A 后再分析",
     )
     _add_common_args(local_parser)
 
@@ -122,6 +130,20 @@ def _run_analysis(args) -> None:
     else:  # local
         diff = get_staged_diff(context_lines=args.context_lines)
 
+        # auto-stage: --stage flag or interactive prompt
+        if not diff.files and not diff.skipped_files:
+            if args.stage:
+                _do_git_add()
+                diff = get_staged_diff(context_lines=args.context_lines)
+            elif _has_unstaged_changes():
+                try:
+                    answer = input("发现未暂存的变更，是否先 git add -A？[y/N] ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = "n"
+                if answer in ("y", "yes"):
+                    _do_git_add()
+                    diff = get_staged_diff(context_lines=args.context_lines)
+
     if not diff.files:
         if args.json:
             print(json.dumps({
@@ -166,6 +188,21 @@ def _run_analysis(args) -> None:
         _ci_output(risks)
     else:
         render(diff, risks, llm_result, args)
+
+
+def _do_git_add() -> None:
+    import subprocess
+    subprocess.run(["git", "add", "-A"], check=True)
+    print("已执行 git add -A")
+
+
+def _has_unstaged_changes() -> bool:
+    import subprocess
+    result = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    return bool(result.stdout.strip())
 
 
 def _show_or_switch_model(args) -> None:
