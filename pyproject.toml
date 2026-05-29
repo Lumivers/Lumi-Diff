@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lumidiff"
+version = "0.1.0"
+description = "AI-powered CLI tool for automated PR review and staged diff analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "rich>=13.0",
+    "requests>=2.28",
+    "pydantic>=2.0",
+]
+
+[project.scripts]
+lumidiff = "lumidiff.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lumidiff*"]
