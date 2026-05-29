@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -123,6 +124,14 @@ def _build_system_prompt(is_local_mode: bool) -> str:
 - 输出必须是纯 JSON，不要包裹在 ```json``` 中"""
 
 
+def _sanitize_json(text: str) -> str:
+    """Fix common LLM JSON output issues: markdown fences, invalid escapes."""
+    text = text.strip().removeprefix("```json").removesuffix("```").strip()
+    # fix invalid JSON escapes: \s, \p, \c etc. that aren't valid JSON
+    text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
+    return text
+
+
 # -- API call --
 
 def analyze(
@@ -172,7 +181,7 @@ def analyze(
                     "Content-Type": "application/json",
                 },
                 json=payload,
-                timeout=30,
+                timeout=int(os.environ.get("LUMIDIFF_TIMEOUT", "120")),
             )
             resp.raise_for_status()
         except requests.RequestException as e:
@@ -195,7 +204,7 @@ def analyze(
             return _llm_to_result(validated, model, elapsed)
         except (json.JSONDecodeError, ValidationError) as e:
             if attempt == 0:
-                content = content.strip().removeprefix("```json").removesuffix("```").strip()
+                content = _sanitize_json(content)
                 continue
             return LLMResult(
                 summary="(LLM 返回格式异常，以下为原始输出)",
