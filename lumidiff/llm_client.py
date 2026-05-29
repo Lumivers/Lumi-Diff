@@ -39,8 +39,31 @@ class LLMResult:
 
 # -- config --
 
-DEFAULT_MODEL = "deepseek-v4-pro"
-DEFAULT_API_BASE = "https://api.deepseek.com"
+DEFAULT_MODEL = "mimo-v2.5-pro"
+DEFAULT_API_BASE = "https://api.xiaomimimo.com/v1"
+
+# model -> (api_base, env_key_for_api_key)
+_MODEL_REGISTRY = {
+    "deepseek-v4-pro": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
+    "mimo-v2.5-pro": ("https://api.xiaomimimo.com/v1", "MIMO_API_KEY"),
+}
+
+
+def _resolve_api_key(model: str) -> str:
+    """Read the provider's standard API key env var."""
+    if model in _MODEL_REGISTRY:
+        return os.environ.get(_MODEL_REGISTRY[model][1], "")
+    return ""
+
+
+def _resolve_api_base(model: str) -> str:
+    """Use env override, then model registry, then default."""
+    env = os.environ.get("LUMIDIFF_API_BASE")
+    if env:
+        return env
+    if model in _MODEL_REGISTRY:
+        return _MODEL_REGISTRY[model][0]
+    return DEFAULT_API_BASE
 
 
 def _build_system_prompt(is_local_mode: bool) -> str:
@@ -79,14 +102,15 @@ def analyze(
     """Send diff to LLM and return structured result."""
     if model is None:
         model = os.environ.get("LUMIDIFF_MODEL", DEFAULT_MODEL)
-    api_key = os.environ.get("LUMIDIFF_API_KEY", "")
+    api_key = _resolve_api_key(model)
+    env_key = _MODEL_REGISTRY.get(model, ("", "LUMIDIFF_API_KEY"))[1]
     if not api_key:
         return LLMResult(
-            summary="(未设置 LUMIDIFF_API_KEY，跳过 LLM 分析)",
-            parse_error="missing API key",
+            summary=f"(未设置 {env_key}，跳过 LLM 分析)",
+            parse_error=f"missing {env_key}",
         )
 
-    api_base = os.environ.get("LUMIDIFF_API_BASE", DEFAULT_API_BASE)
+    api_base = _resolve_api_base(model)
 
     # truncate diff to avoid blowing context
     max_chars = 8000

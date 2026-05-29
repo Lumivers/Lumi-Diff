@@ -73,12 +73,23 @@ _PR_URL_RE = re.compile(
     r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)"
 )
 
+_COMMIT_URL_RE = re.compile(
+    r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/commit/(?P<sha>[0-9a-f]{7,40})"
+)
+
 
 def parse_pr_url(url: str) -> tuple[str, str, int] | None:
     m = _PR_URL_RE.search(url)
     if not m:
         return None
     return m.group("owner"), m.group("repo"), int(m.group("number"))
+
+
+def parse_commit_url(url: str) -> tuple[str, str, str] | None:
+    m = _COMMIT_URL_RE.search(url)
+    if not m:
+        return None
+    return m.group("owner"), m.group("repo"), m.group("sha")
 
 
 # -- diff sources --
@@ -109,6 +120,63 @@ def get_staged_diff(context_lines: int = 10) -> DiffResult:
     )
 
 
+def get_commit_diff(
+    commit_ref: str,
+    github_token: str | None = None,
+    context_lines: int = 10,
+) -> DiffResult:
+    """Fetch a commit's diff. Supports GitHub URL or local git SHA/ref."""
+    parsed = parse_commit_url(commit_ref)
+    if parsed:
+        owner, repo, sha = parsed
+        return _get_github_commit_diff(owner, repo, sha, github_token)
+    # treat as local git ref
+    return _get_local_commit_diff(commit_ref, context_lines)
+
+
+def _get_local_commit_diff(ref: str, context_lines: int = 10) -> DiffResult:
+    """Get diff for a local commit via git show."""
+    cmd = ["git", "show", ref, f"-U{context_lines}"]
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    if result.returncode != 0:
+        raise ValueError(f"git show 失败: {result.stderr.strip()}")
+    raw = result.stdout or ""
+    files = _parse_diff_files(raw)
+    additions = sum(f.additions for f in files)
+    deletions = sum(f.deletions for f in files)
+    code_files = [f for f in files if not should_ignore(f.path)]
+    skipped = [f.path for f in files if should_ignore(f.path)]
+    return DiffResult(
+        files=code_files,
+        raw_diff=raw,
+        context_diff=raw,
+        skipped_files=skipped,
+        total_additions=additions,
+        total_deletions=deletions,
+    )
+
+
+def _get_github_commit_diff(
+    owner: str, repo: str, sha: str, github_token: str | None,
+) -> DiffResult:
+    """Fetch a single commit's diff via GitHub API."""
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "lumidiff",
+    }
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    url = f"https://api.github.com/repos/{owner}/{repo}/commits/{sha}"
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    files_data = data.get("files", [])
+    return _build_diff_result_from_github_files(files_data)
+
+
 def get_pr_diff(
     pr_url: str,
     github_token: str | None = None,
@@ -129,33 +197,40 @@ def get_pr_diff(
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
     params = {"per_page": 100}
 
-    all_files: list[FileDiff] = []
-    truncated: list[str] = []
+    all_files_data: list[dict] = []
 
     while url:
         resp = requests.get(url, headers=headers, params=params if "?" not in url else {})
         resp.raise_for_status()
         data = resp.json()
-
-        for item in data:
-            if isinstance(item, dict):
-                filename = item.get("filename", "")
-                if should_ignore(filename):
-                    continue
-                patch = item.get("patch")
-                fd = FileDiff(
-                    path=filename,
-                    patch=patch,
-                    additions=item.get("additions", 0),
-                    deletions=item.get("deletions", 0),
-                    truncated=patch is None,
-                )
-                all_files.append(fd)
-                if patch is None:
-                    truncated.append(filename)
-
-        # handle pagination
+        all_files_data.extend(item for item in data if isinstance(item, dict))
         url = _next_page(resp.headers)
+
+    return _build_diff_result_from_github_files(all_files_data)
+
+
+# -- helpers --
+
+def _build_diff_result_from_github_files(files_data: list[dict]) -> DiffResult:
+    """Convert GitHub API files array into DiffResult."""
+    all_files: list[FileDiff] = []
+    truncated: list[str] = []
+
+    for item in files_data:
+        filename = item.get("filename", "")
+        if should_ignore(filename):
+            continue
+        patch = item.get("patch")
+        fd = FileDiff(
+            path=filename,
+            patch=patch,
+            additions=item.get("additions", 0),
+            deletions=item.get("deletions", 0),
+            truncated=patch is None,
+        )
+        all_files.append(fd)
+        if patch is None:
+            truncated.append(filename)
 
     raw_diff = _render_unified_diff(all_files)
     total_add = sum(f.additions for f in all_files)
@@ -170,8 +245,6 @@ def get_pr_diff(
         truncated_files=truncated,
     )
 
-
-# -- helpers --
 
 def _parse_diff_files(raw: str) -> list[FileDiff]:
     """Parse files from unified diff output."""

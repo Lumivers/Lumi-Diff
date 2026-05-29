@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 
-from lumidiff.diff_source import get_staged_diff, get_pr_diff
+from lumidiff.diff_source import get_staged_diff, get_pr_diff, get_commit_diff
 from lumidiff.rule_engine import scan_all
 from lumidiff.llm_client import analyze, DEFAULT_MODEL, DEFAULT_API_BASE
 from lumidiff.reporter import render
@@ -29,6 +29,10 @@ def main() -> None:
     parser.add_argument(
         "--pr", type=str, default=None,
         help="GitHub PR URL to analyze",
+    )
+    parser.add_argument(
+        "--commit", type=str, default=None,
+        help="GitHub commit URL to analyze",
     )
     parser.add_argument(
         "--model", type=str, default=DEFAULT_MODEL,
@@ -58,9 +62,15 @@ def main() -> None:
         return
 
     # 1. get diff
+    if args.pr and args.commit:
+        print("错误: --pr 和 --commit 不能同时使用")
+        sys.exit(1)
+
+    token = os.environ.get("GITHUB_TOKEN", "")
     if args.pr:
-        token = os.environ.get("GITHUB_TOKEN", "")
         diff = get_pr_diff(args.pr, github_token=token or None)
+    elif args.commit:
+        diff = get_commit_diff(args.commit, github_token=token or None)
     else:
         diff = get_staged_diff(context_lines=args.context_lines)
 
@@ -81,7 +91,7 @@ def main() -> None:
         llm_result = analyze(
             diff_text,
             model=args.model,
-            is_local=(args.pr is None),
+            is_local=(args.pr is None and args.commit is None),
         )
 
     # 4. merge LLM suggestions into risks (de-duplicate)
@@ -103,10 +113,10 @@ def main() -> None:
 def _show_or_switch_model(args) -> None:
     from rich.console import Console
     from rich.table import Table
+    from lumidiff.llm_client import _MODEL_REGISTRY
 
     console = Console()
     current_model = os.environ.get("LUMIDIFF_MODEL", DEFAULT_MODEL)
-    current_base = os.environ.get("LUMIDIFF_API_BASE", DEFAULT_API_BASE)
 
     if args.name:
         os.environ["LUMIDIFF_MODEL"] = args.name
@@ -116,12 +126,13 @@ def _show_or_switch_model(args) -> None:
         if args.base_url:
             console.print(f"[green]API Base:[/green] {args.base_url}")
     else:
+        base, env_key = _MODEL_REGISTRY.get(current_model, (DEFAULT_API_BASE, "LUMIDIFF_API_KEY"))
         table = Table(title="当前 LLM 配置", show_header=False, border_style="cyan")
         table.add_column("Key", style="bold")
         table.add_column("Value")
         table.add_row("模型", current_model)
-        table.add_row("API Base", current_base)
-        table.add_row("API Key", "***已设置***" if os.environ.get("LUMIDIFF_API_KEY") else "[red]未设置[/red]")
+        table.add_row("API Base", base)
+        table.add_row("API Key", f"{env_key}: ***已设置***" if os.environ.get(env_key) else f"{env_key}: [red]未设置[/red]")
         console.print(table)
         console.print()
         console.print("[dim]切换模型: lumidiff model <name> --base-url <url>[/dim]")
