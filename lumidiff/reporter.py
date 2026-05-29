@@ -51,11 +51,11 @@ def render(
     # -- risks table --
     if risks:
         console.print(f"[bold]Risks[/bold]  {risk_count} found\n")
-        table = Table(show_header=True, header_style="bold")
-        table.add_column("Sev", width=4)
-        table.add_column("Location", width=30)
-        table.add_column("Description")
-        table.add_column("Confidence", width=14)
+        table = Table(show_header=True, header_style="bold", expand=False)
+        table.add_column("Sev", width=4, no_wrap=True)
+        table.add_column("Location", no_wrap=True)
+        table.add_column("Description", no_wrap=False, max_width=80)
+        table.add_column("Confidence", width=14, no_wrap=True)
 
         for r in risks:
             sev_color, sev_label = _severity_style(r.severity)
@@ -86,6 +86,21 @@ def render(
             )
 
         console.print(table)
+
+        # -- fix suggestions --
+        fixes = [r for r in risks if r.fix]
+        if fixes:
+            console.print()
+            console.print("[bold]Fix Suggestions[/bold]\n")
+            for r in fixes:
+                sev_color, sev_label = _severity_style(r.severity)
+                console.print(
+                    f"  {Text(sev_label, style=sev_color)} "
+                    f"[underline]{r.file}:{r.line}[/underline]"
+                )
+                console.print(f"  {r.message}")
+                console.print(f"  [green]Fix:[/green] {r.fix}")
+                console.print()
 
     elif not risks:
         console.print("[dim]No risks detected.[/dim]")
@@ -132,6 +147,7 @@ def _render_json(diff: DiffResult, risks: list[Risk], llm: LLMResult | None) -> 
                 "file": r.file,
                 "line": r.line,
                 "severity": r.severity,
+                "fix": r.fix,
                 "message": r.message,
                 "rule_id": r.rule_id,
                 "confidence": r.confidence,

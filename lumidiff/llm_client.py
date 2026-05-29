@@ -16,6 +16,7 @@ class _Suggestion(BaseModel):
     severity: str           # HIGH / MEDIUM / LOW
     message: str
     confidence: float
+    fix: str = ""           # 修复建议
 
 
 class _LLMResponse(BaseModel):
@@ -68,9 +69,37 @@ def _resolve_api_base(model: str) -> str:
 
 def _build_system_prompt(is_local_mode: bool) -> str:
     commit_line = '"commit_message": "feat: xxx（建议的 commit message）"' if is_local_mode else ""
-    return f"""你是资深代码审查专家。以下是一次代码变更的 unified diff。请仔细分析后，以严格 JSON 格式输出审查结果。
+    return f"""你是资深代码审查专家，同时精通安全审计、代码规范和变更管理。以下是一次代码变更的 unified diff。请从以下 5 个维度综合分析：
 
-输出 JSON 格式：
+## 分析维度
+
+### 1. 安全审计（必做）
+- 注入漏洞：SQL/NoSQL/OS Command/XSS/路径穿越/SSRF
+- 硬编码敏感信息：API Key / Token / Password（⚠️ 测试文件中的 mock key 不算）
+- 不安全 API：弱加密（MD5/SHA-1）、禁用 TLS、不安全反序列化
+- 认证授权缺陷：缺少鉴权、IDOR、Token 泄露
+- 注意：仅报告真实风险，不要对测试文件中的 fake key、fixture 数据报安全问题
+
+### 2. 代码规范
+- 未使用变量/导入、拼写错误、命名不规范
+- 框架最佳实践违背（如 Python 中的 bare except、TypeScript 中的 any 滥用）
+- 与项目现有代码风格的一致性
+
+### 3. 逻辑与健壮性
+- 边界条件未处理、空指针风险、异常吞没
+- 并发/竞态问题、资源泄露（文件句柄、连接未关闭）
+- 跨行代码模式（如跨行 SQL 拼接、换行写的 except）
+
+### 4. 变更影响评估
+- Breaking Change 检测：公开 API 移除/重命名/签名变更
+- 依赖变更风险：新增依赖是否有已知漏洞
+- 配置变更影响
+
+### 5. 测试覆盖
+- 新增功能是否配套测试
+- 关键路径（公开 API / 异常分支）是否有测试
+
+## 输出 JSON 格式
 {{
   "summary": "变更摘要（中文，2-4句，概括这次改了什么、影响范围）",
   "suggestions": [
@@ -78,18 +107,20 @@ def _build_system_prompt(is_local_mode: bool) -> str:
       "file": "文件路径",
       "line": 行号,
       "severity": "HIGH|MEDIUM|LOW",
-      "message": "具体、可执行的问题描述",
-      "confidence": 0.0 到 1.0 之间的浮点数
+      "message": "问题描述",
+      "fix": "修复建议代码或操作步骤",
+      "confidence": 0.0 到 1.0
     }}
   ]{',' + commit_line if commit_line else ''}
 }}
 
-重要约束：
-- confidence 必须诚实评估。不确定时宁低勿高，不要虚标 0.9+。
-- 仅报告 diff 中实际可见的代码，不要臆测上下文或推测文件其它部分。
-- 关注跨行代码模式（如跨行的 SQL 拼接、换行写的 except 等）。
-- 如果 diff 中没有值得报告的问题，suggestions 数组可以为空。
-- 输出必须是纯 JSON，不要包裹在 ```json``` 或任何其他格式中。"""
+## 约束
+- confidence 诚实评估，不确定时宁低勿高
+- 仅报告 diff 中实际可见的代码，不要臆测
+- 测试文件（tests/、__tests__/、*_test.*）中的 mock/fixture 数据不算安全问题
+- .changeset/、*.md 等非代码文件的变更不需要报告代码问题
+- 如果没有值得报告的问题，suggestions 可以为空
+- 输出必须是纯 JSON，不要包裹在 ```json``` 中"""
 
 
 # -- API call --
@@ -111,11 +142,6 @@ def analyze(
         )
 
     api_base = _resolve_api_base(model)
-
-    # truncate diff to avoid blowing context
-    max_chars = 8000
-    if len(diff_text) > max_chars:
-        diff_text = diff_text[:max_chars] + "\n... (diff truncated)"
 
     payload = {
         "model": model,
@@ -195,6 +221,7 @@ def _llm_to_result(validated: _LLMResponse, model: str, elapsed: float) -> LLMRe
             rule_id=f"llm-{i}",
             confidence=str(s.confidence),
             source="llm",
+            fix=s.fix,
         )
         for i, s in enumerate(validated.suggestions)
     ]

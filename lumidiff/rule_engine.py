@@ -11,45 +11,34 @@ class Risk:
     rule_id: str
     confidence: str = "N/A (rule)"  # rule-literal or LLM float
     source: str = "rule"            # "rule" or "llm"
+    fix: str = ""           # 修复建议
 
 
 # -- rule definitions --
 
 _RULE_SPECS: list[tuple[str, str, str]] = [
-    # (rule_id, pattern, severity)
+    # (rule_id, pattern, severity) — 仅保留零误报规则
     (
         "R001",
-        r"(?:password|secret|api_key|api_secret|token|AUTH_TOKEN)\s*=\s*['\"][^'\"]{8,}['\"]",
-        "HIGH",
-    ),
-    (
-        "R002",
         r"\b(?:eval|exec)\s*\(",
         "HIGH",
     ),
     (
-        "R003",
+        "R002",
         r"\bshell\s*=\s*True",
         "HIGH",
     ),
     (
-        "R004",
-        r"except\s*:\s*",
+        "R003",
+        r"except\s*:\s*pass",
         "MEDIUM",
-    ),
-    (
-        "R005",
-        r"#\s*(?:TODO|FIXME|HACK)",
-        "LOW",
     ),
 ]
 
 _RULE_MESSAGES = {
-    "R001": "疑似硬编码密钥",
-    "R002": "使用了 eval/exec，存在代码注入风险",
-    "R003": "subprocess 中使用 shell=True，存在命令注入风险",
-    "R004": "裸 except: 可能吞掉关键异常，影响调试和稳定性",
-    "R005": "TODO/FIXME/HACK 标记残留",
+    "R001": "使用了 eval/exec，存在代码注入风险",
+    "R002": "subprocess 中使用 shell=True，存在命令注入风险",
+    "R003": "裸 except: pass 吞掉所有异常，影响调试和稳定性",
 }
 
 # patterns are pre-compiled per spec
