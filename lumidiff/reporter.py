@@ -102,6 +102,7 @@ def render(
         )
         table.add_column("Sev", width=6, no_wrap=True)
         table.add_column("Location", no_wrap=True)
+        table.add_column("Code", no_wrap=False, ratio=1)
         table.add_column("Description", no_wrap=False, ratio=1)
         table.add_column("Confidence", width=16, no_wrap=True)
 
@@ -126,9 +127,16 @@ def render(
                     pass
 
             row_style = "dim" if is_low_conf else ""
+            # code snippet — truncate for table display
+            snippet_text = ""
+            if r.code_snippet:
+                snip = r.code_snippet.strip()
+                snippet_text = snip[:60] + ("..." if len(snip) > 60 else "")
+
             table.add_row(
                 Text(sev_label, style=sev_color),
                 loc,
+                Text(snippet_text, style="dim cyan") if snippet_text else Text("-", style="dim"),
                 r.message,
                 conf_text,
                 style=row_style,
@@ -153,10 +161,16 @@ def render(
                     f"[underline]{r.file}:{r.line}[/underline]"
                 )
                 console.print(f"  {r.message}")
+                # show current code snippet
+                if r.code_snippet:
+                    lang = _detect_lang(r.file)
+                    console.print(f"  [dim]Current:[/dim]")
+                    console.print(Syntax(r.code_snippet.strip(), lang, theme="monokai", padding=(0, 2)))
                 # strip markdown fences and render with syntax highlighting
                 fix_text = _strip_code_fences(r.fix)
                 if _looks_like_code(fix_text):
                     lang = _detect_lang(r.file)
+                    console.print(f"  [green]Fix:[/green]")
                     console.print(Syntax(fix_text, lang, theme="monokai", padding=(0, 2)))
                 else:
                     console.print(f"  [green]Fix:[/green] {fix_text}")
@@ -217,6 +231,7 @@ def _render_json(diff: DiffResult, risks: list[Risk], llm: LLMResult | None) -> 
                 "file": r.file,
                 "line": r.line,
                 "severity": r.severity,
+                "code_snippet": r.code_snippet,
                 "fix": r.fix,
                 "message": r.message,
                 "rule_id": r.rule_id,

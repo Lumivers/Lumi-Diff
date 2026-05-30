@@ -295,6 +295,7 @@
                     <tr>
                         <th>Sev</th>
                         <th>Location</th>
+                        <th>Code</th>
                         <th>Description</th>
                         <th>Confidence</th>
                     </tr>
@@ -306,6 +307,7 @@
                     <tr{% if r.source == 'llm' and conf_val <= 0.6 %} style="opacity:0.5"{% endif %}>
                         <td class="{{ sev_class }}">{{ r.severity }}</td>
                         <td><code>{{ r.file }}:{{ r.line }}</code></td>
+                        <td><code style="color:var(--accent);font-size:0.8rem;">{% if r.code_snippet %}{{ r.code_snippet[:60] }}{% if r.code_snippet|length > 60 %}...{% endif %}{% else %}-{% endif %}</code></td>
                         <td>{{ r.message }}</td>
                         <td>
                             {% if r.source == 'rule' %}N/A (rule)
@@ -332,6 +334,11 @@
                     <code>{{ r.file }}:{{ r.line }}</code>
                 </div>
                 <div class="fix-message">{{ r.message }}</div>
+                {% if r.code_snippet %}
+                <div style="margin-bottom:0.5rem;"><span style="color:var(--text-muted);font-size:0.85rem;">Current:</span></div>
+                <pre><code>{{ r.code_snippet }}</code></pre>
+                {% endif %}
+                <div style="margin-bottom:0.5rem;"><span style="color:var(--fix-code);font-size:0.85rem;">Fix:</span></div>
                 <pre><code>{{ r.fix }}</code></pre>
             </div>
             {% endfor %}

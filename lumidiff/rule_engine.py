@@ -14,6 +14,7 @@ class Risk:
     confidence: str = "N/A (rule)"  # rule-literal or LLM float
     source: str = "rule"            # "rule" or "llm"
     fix: str = ""           # 修复建议
+    code_snippet: str = ""  # 问题代码片段（从 diff 中提取）
 
 
 # -- rule definitions --
@@ -123,6 +124,7 @@ def scan(filepath: str, patch: str) -> list[Risk]:
                     severity=severity,
                     message=message,
                     rule_id=rule_id,
+                    code_snippet=content.strip(),
                 ))
 
     return results

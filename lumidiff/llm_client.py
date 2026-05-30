@@ -18,6 +18,7 @@ class _Suggestion(BaseModel):
     message: str
     confidence: float
     fix: str = ""           # 修复建议
+    code_snippet: str = ""  # 问题代码片段（原样摘录 diff 中的代码行）
 
 
 class _LLMResponse(BaseModel):
@@ -109,6 +110,7 @@ def _build_system_prompt(is_local_mode: bool) -> str:
       "line": 行号,
       "severity": "HIGH|MEDIUM|LOW",
       "message": "问题描述",
+      "code_snippet": "问题代码行（从 diff 中原样摘录，不含 +/- 前缀）",
       "fix": "修复建议代码或操作步骤",
       "confidence": 0.0 到 1.0
     }}
@@ -231,6 +233,7 @@ def _llm_to_result(validated: _LLMResponse, model: str, elapsed: float) -> LLMRe
             confidence=str(s.confidence),
             source="llm",
             fix=s.fix,
+            code_snippet=s.code_snippet,
         )
         for i, s in enumerate(validated.suggestions)
     ]

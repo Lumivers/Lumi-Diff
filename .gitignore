@@ -11,3 +11,5 @@ venv/
 htmlcov/
 .pytest_cache/
 .ruff_cache/
+*.md
+!README.md

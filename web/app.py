@@ -181,6 +181,7 @@ async def api_analyze(url: str):
                     "line": r.line,
                     "severity": r.severity,
                     "message": r.message,
+                    "code_snippet": r.code_snippet,
                     "fix": r.fix,
                     "confidence": r.confidence,
                     "source": r.source,
