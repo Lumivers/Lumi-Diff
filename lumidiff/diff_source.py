@@ -2,6 +2,7 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from functools import lru_cache
 
 import requests
 
@@ -194,19 +195,26 @@ def get_pr_diff(
     if github_token:
         headers["Authorization"] = f"Bearer {github_token}"
 
+    headers_tuple = tuple(headers.items())
+    all_files_data = _fetch_pr_files(owner, repo, pr_number, headers_tuple)
+    return _build_diff_result_from_github_files(all_files_data)
+
+
+@lru_cache(maxsize=16)
+def _fetch_pr_files(owner: str, repo: str, pr_number: int, headers: tuple[tuple[str, str], ...]) -> list[dict]:
+    """Fetch PR files from GitHub API with caching."""
+    headers_dict = dict(headers)
     url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
     params = {"per_page": 100}
 
-    all_files_data: list[dict] = []
-
+    all_files: list[dict] = []
     while url:
-        resp = requests.get(url, headers=headers, params=params if "?" not in url else {})
+        resp = requests.get(url, headers=headers_dict, params=params if "?" not in url else {})
         resp.raise_for_status()
         data = resp.json()
-        all_files_data.extend(item for item in data if isinstance(item, dict))
+        all_files.extend(item for item in data if isinstance(item, dict))
         url = _next_page(resp.headers)
-
-    return _build_diff_result_from_github_files(all_files_data)
+    return all_files
 
 
 # -- helpers --
