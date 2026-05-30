@@ -51,11 +51,10 @@ def _add_usage(tokens: int) -> None:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "result": None,
-        "error": None,
-    })
+    return templates.TemplateResponse(
+        request=request, name="index.html",
+        context={"result": None, "error": None},
+    )
 
 
 @app.post("/analyze", response_class=HTMLResponse)
@@ -63,20 +62,18 @@ async def analyze_form(request: Request, url: str = Form(...)):
     # 检查 token 限额
     ok, used = _check_usage()
     if not ok:
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "result": None,
-            "error": f"今日额度已用完（{used:,} / {DAILY_LIMIT:,} token），请明天再试。",
-        })
+        return templates.TemplateResponse(
+            request=request, name="index.html",
+            context={"result": None, "error": f"今日额度已用完（{used:,} / {DAILY_LIMIT:,} token），请明天再试。"},
+        )
 
     # 判断 URL 类型
     url = url.strip()
     if not url:
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "result": None,
-            "error": "请输入 GitHub PR 或 Commit URL。",
-        })
+        return templates.TemplateResponse(
+            request=request, name="index.html",
+            context={"result": None, "error": "请输入 GitHub PR 或 Commit URL。"},
+        )
 
     try:
         t0 = time.perf_counter()
@@ -88,11 +85,10 @@ async def analyze_form(request: Request, url: str = Form(...)):
             diff = get_commit_diff(url, github_token=os.environ.get("GITHUB_TOKEN") or None)
             is_local = False
         else:
-            return templates.TemplateResponse("index.html", {
-                "request": request,
-                "result": None,
-                "error": f"无法识别 URL 格式：{url}",
-            })
+            return templates.TemplateResponse(
+                request=request, name="index.html",
+                context={"result": None, "error": f"无法识别 URL 格式：{url}"},
+            )
 
         # 规则引擎
         risks = scan_all(diff.files)
@@ -121,23 +117,24 @@ async def analyze_form(request: Request, url: str = Form(...)):
             est_tokens = len(diff.raw_diff) // 4 + len(llm_result.summary) * 2
             _add_usage(est_tokens)
 
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "result": {
-                "diff": diff,
-                "risks": risks,
-                "llm": llm_result,
-                "elapsed": round(elapsed, 1),
+        return templates.TemplateResponse(
+            request=request, name="index.html",
+            context={
+                "result": {
+                    "diff": diff,
+                    "risks": risks,
+                    "llm": llm_result,
+                    "elapsed": round(elapsed, 1),
+                },
+                "error": None,
             },
-            "error": None,
-        })
+        )
 
     except Exception as e:
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "result": None,
-            "error": f"分析失败：{e}",
-        })
+        return templates.TemplateResponse(
+            request=request, name="index.html",
+            context={"result": None, "error": f"分析失败：{e}"},
+        )
 
 
 @app.get("/api/analyze")
