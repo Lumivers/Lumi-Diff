@@ -36,17 +36,35 @@ _RULE_SPECS: list[tuple[str, str, str]] = [
         r"except\s*:\s*pass",
         "MEDIUM",
     ),
+    (
+        "R004",
+        r"(?:api_key|secret|password|token|auth_token|api_secret)\s*=\s*['\"][a-zA-Z0-9_\-]{8,}['\"]",
+        "HIGH",
+    ),
+    (
+        "R005",
+        r"def\s+\w+\s*\([^)]*=\s*(?:\[\]|\{\})",
+        "MEDIUM",
+    ),
+    (
+        "R006",
+        r"^\s*(?:print|console\.log|var_dump|dd)\s*\(",
+        "LOW",
+    ),
 ]
 
 _RULE_MESSAGES = {
     "R001": "使用了 eval/exec，存在代码注入风险",
     "R002": "subprocess 中使用 shell=True，存在命令注入风险",
     "R003": "裸 except: pass 吞掉所有异常，影响调试和稳定性",
+    "R004": "疑似硬编码密钥/密码，应使用环境变量或密钥管理服务",
+    "R005": "使用了可变默认参数（=[] 或 ={}），会导致状态污染和数据串链",
+    "R006": "生产代码中残留调试打印，应替换为 logging 模块",
 }
 
 # patterns are pre-compiled per spec
 _RULES: list[tuple[str, re.Pattern, str, str]] = [
-    (rid, re.compile(pat, re.MULTILINE | re.DOTALL), sev, _RULE_MESSAGES.get(rid, rid))
+    (rid, re.compile(pat, re.MULTILINE | re.DOTALL | re.IGNORECASE), sev, _RULE_MESSAGES.get(rid, rid))
     for rid, pat, sev in _RULE_SPECS
 ]
 
