@@ -32,8 +32,58 @@ IGNORED_PATTERNS = [
     re.compile(r"\.terraform\.lock\..*"),
 ]
 
+# -- .lumignore support --
+
+def _load_lumignore() -> list[str]:
+    """Load patterns from .lumignore file in current directory or git root."""
+    patterns: list[str] = []
+    for candidate in [Path(".lumignore"), Path(_git_root()) / ".lumignore"]:
+        if candidate.is_file():
+            for line in candidate.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line)
+            break
+    return patterns
+
+
+def _git_root() -> str:
+    """Get git repository root directory."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except FileNotFoundError:
+        pass
+    return "."
+
+
+def _match_lumignore(filepath: str, patterns: list[str]) -> bool:
+    """Check if filepath matches any .lumignore pattern (gitignore-style)."""
+    from fnmatch import fnmatch
+    path = filepath.replace("\\", "/")
+    for pat in patterns:
+        # directory pattern: "docs/" matches "docs/anything"
+        if pat.endswith("/"):
+            if path.startswith(pat) or fnmatch(path, pat + "*"):
+                return True
+        # file pattern
+        elif fnmatch(path, pat) or fnmatch(Path(path).name, pat):
+            return True
+    return False
+
+
+_lumignore_patterns: list[str] | None = None
+
 
 def should_ignore(filepath: str) -> bool:
+    global _lumignore_patterns
+    if _lumignore_patterns is None:
+        _lumignore_patterns = _load_lumignore()
+
     name = Path(filepath).name
     ext = Path(filepath).suffix
     if ext in IGNORED_EXTENSIONS:
@@ -43,6 +93,8 @@ def should_ignore(filepath: str) -> bool:
     for pat in IGNORED_PATTERNS:
         if pat.match(name):
             return True
+    if _lumignore_patterns and _match_lumignore(filepath, _lumignore_patterns):
+        return True
     return False
 
 

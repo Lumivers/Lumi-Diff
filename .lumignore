@@ -1,0 +1,41 @@
+# LumiDiff 忽略规则（兼容 gitignore 语法）
+# 这些文件不会被送入规则引擎和 LLM 分析
+
+# 文档和配置
+*.md
+*.txt
+*.rst
+LICENSE
+CHANGELOG*
+
+# 测试 fixtures 和 mock 数据
+tests/fixtures/
+tests/__snapshots__/
+
+# CI/CD 配置
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# IDE 和编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 构建产物和缓存
+dist/
+build/
+__pycache__/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+
+# Changeset 和版本管理
+.changeset/
+
+# 其他
+*.log
+*.tmp
