@@ -45,6 +45,35 @@ def render(
     )
     console.print(header)
 
+    # -- file stats table --
+    if diff.files:
+        ftable = Table(
+            show_header=True, header_style="bold",
+            width=120, expand=False,
+            title="Files Changed",
+        )
+        ftable.add_column("File", no_wrap=False, ratio=1)
+        ftable.add_column("+", width=6, justify="right")
+        ftable.add_column("-", width=6, justify="right")
+
+        for f in sorted(diff.files, key=lambda x: x.additions + x.deletions, reverse=True):
+            total = f.additions + f.deletions
+            if total > 50:
+                style = "bold red"
+            elif total > 20:
+                style = "yellow"
+            else:
+                style = ""
+            ftable.add_row(
+                f.path,
+                f"+{f.additions}",
+                f"-{f.deletions}",
+                style=style,
+            )
+
+        console.print(ftable)
+        console.print()
+
     # -- summary --
     if llm and llm.summary and not llm.parse_error:
         console.print(Markdown(llm.summary))
