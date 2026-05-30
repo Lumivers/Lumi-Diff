@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -38,8 +39,10 @@ def render(
 
     added = diff.total_additions
     deleted = diff.total_deletions
+    est_min, est_max = _estimate_review_minutes(diff, risks)
     header = Panel(
-        f"Files: {file_count}  [+{added} -{deleted}]   Risks: {risk_count}   {llm_info}",
+        f"Files: {file_count}  [+{added} -{deleted}]   Risks: {risk_count}   "
+        f"Review: ~{est_min}-{est_max}min   {llm_info}",
         title="LumiDiff Report",
         border_style="bold cyan",
     )
@@ -232,6 +235,25 @@ def _render_json(diff: DiffResult, risks: list[Risk], llm: LLMResult | None) -> 
             output["llm_error"] = llm.parse_error
 
     print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+def _estimate_review_minutes(
+    diff: DiffResult, risks: list[Risk],
+) -> tuple[int, int]:
+    """Estimate review time in minutes based on diff size and risk count."""
+    lang_coeff = {
+        ".py": 0.5, ".js": 0.4, ".ts": 0.4, ".jsx": 0.4, ".tsx": 0.4,
+        ".go": 0.3, ".rs": 0.4, ".java": 0.5, ".kt": 0.5,
+    }
+    minutes = 0.0
+    for f in diff.files:
+        coeff = lang_coeff.get(Path(f.path).suffix, 0.5)
+        minutes += f.additions * coeff
+    high_count = sum(1 for r in risks if r.severity.upper() == "HIGH")
+    minutes += high_count * 3
+    lo = max(1, int(minutes * 0.7))
+    hi = max(1, int(minutes * 1.3))
+    return lo, hi
 
 
 def _severity_style(severity: str) -> tuple[str, str]:
