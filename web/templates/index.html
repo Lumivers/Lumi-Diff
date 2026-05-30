@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LumiDiff — AI 代码审查</title>
+    <style>
+        /* 深色/浅色主题变量 */
+        :root {
+            --bg: #f5f5f5;
+            --bg-card: #ffffff;
+            --bg-input: #ffffff;
+            --bg-code: #f0f0f0;
+            --bg-header: #e8e8e8;
+            --bg-th: #e0e0e0;
+            --border: #d0d0d0;
+            --border-focus: #0078d4;
+            --text: #1a1a1a;
+            --text-secondary: #555;
+            --text-muted: #888;
+            --accent: #0078d4;
+            --accent-hover: #005fa3;
+            --sev-high: #d32f2f;
+            --sev-med: #e65100;
+            --sev-low: #888;
+            --file-add: #2e7d32;
+            --file-del: #c62828;
+            --fix-code: #2e7d32;
+            --row-hover: #f0f0f0;
+        }
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #1a1a2e;
+                --bg-card: #16213e;
+                --bg-input: #16213e;
+                --bg-code: #0d1b2a;
+                --bg-header: #16213e;
+                --bg-th: #0f3460;
+                --border: #0f3460;
+                --border-focus: #00d4ff;
+                --text: #e0e0e0;
+                --text-secondary: #b0b0b0;
+                --text-muted: #888;
+                --accent: #00d4ff;
+                --accent-hover: #00b8db;
+                --sev-high: #ff4444;
+                --sev-med: #ffaa00;
+                --sev-low: #888;
+                --file-add: #44ff44;
+                --file-del: #ff4444;
+                --fix-code: #a0d0a0;
+                --row-hover: #1a1a3e;
+            }
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--bg-header);
+            border-bottom: 2px solid var(--border);
+            padding: 1.5rem 2rem;
+            text-align: center;
+        }
+        .header h1 { color: var(--accent); font-size: 1.8rem; margin-bottom: 0.5rem; }
+        .header p { color: var(--text-secondary); font-size: 0.9rem; }
+        .input-section { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .input-group { display: flex; gap: 0.5rem; }
+        .input-group input {
+            flex: 1; padding: 0.8rem 1rem;
+            background: var(--bg-input); border: 1px solid var(--border);
+            border-radius: 4px; color: var(--text);
+            font-family: inherit; font-size: 0.95rem; outline: none;
+            transition: border-color 0.2s;
+        }
+        .input-group input:focus { border-color: var(--border-focus); }
+        .input-group button {
+            padding: 0.8rem 1.5rem;
+            background: var(--bg-th); border: 1px solid var(--accent);
+            border-radius: 4px; color: var(--accent);
+            font-family: inherit; font-size: 0.95rem;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .input-group button:hover { background: var(--accent); color: var(--bg); }
+        .input-group button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .error {
+            max-width: 800px; margin: 1rem auto; padding: 1rem;
+            background: #3d1f1f; border: 1px solid #ff4444;
+            border-radius: 4px; color: #ff6666;
+        }
+        .loading { max-width: 800px; margin: 2rem auto; text-align: center; display: none; }
+        .spinner {
+            display: inline-block; width: 40px; height: 40px;
+            border: 3px solid var(--border); border-top: 3px solid var(--accent);
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading p { margin-top: 1rem; color: var(--text-muted); }
+        .report { max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+        .panel {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 4px; padding: 1rem 1.5rem; margin-bottom: 1.5rem;
+        }
+        .panel-header { color: var(--accent); font-weight: bold; margin-bottom: 0.5rem; font-size: 1.1rem; }
+        .stats { display: flex; gap: 2rem; flex-wrap: wrap; }
+        .stat-item { font-size: 0.95rem; }
+        .stat-value { color: var(--accent); font-weight: bold; }
+        .summary {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 4px; padding: 1rem 1.5rem; margin-bottom: 1.5rem; line-height: 1.6;
+        }
+        .table-container { overflow-x: auto; margin-bottom: 1.5rem; }
+        table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: 4px; overflow: hidden; }
+        th { background: var(--bg-th); color: var(--accent); padding: 0.6rem 1rem; text-align: left; font-size: 0.85rem; text-transform: uppercase; }
+        td { padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; color: var(--text); }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: var(--row-hover); }
+        .sev-high { color: var(--sev-high); font-weight: bold; }
+        .sev-med { color: var(--sev-med); font-weight: bold; }
+        .sev-low { color: var(--sev-low); }
+        .uncertain { color: var(--text-muted); font-size: 0.8rem; }
+        .file-add { color: var(--file-add); }
+        .file-del { color: var(--file-del); }
+        .file-hot { color: var(--sev-high); font-weight: bold; }
+        .file-warm { color: var(--sev-med); }
+        .fix-section { margin-top: 1.5rem; }
+        .fix-item {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 4px; padding: 1rem 1.5rem; margin-bottom: 1rem;
+        }
+        .fix-item .fix-header { display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem; }
+        .fix-item .fix-message { color: var(--text-secondary); margin-bottom: 0.5rem; }
+        .fix-item pre {
+            background: var(--bg-code); border: 1px solid var(--border);
+            border-radius: 4px; padding: 0.8rem; overflow-x: auto;
+            font-size: 0.85rem; line-height: 1.4;
+        }
+        .fix-item code { color: var(--fix-code); }
+        .commit-section {
+            background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 4px; padding: 1rem 1.5rem; margin-top: 1.5rem;
+        }
+        .commit-section h3 { color: var(--accent); margin-bottom: 0.5rem; }
+        .commit-cmd {
+            background: var(--bg-code); border: 1px solid var(--border);
+            border-radius: 4px; padding: 0.8rem;
+            font-family: inherit; color: var(--accent);
+            cursor: pointer; user-select: all;
+        }
+        .commit-cmd:hover { background: var(--row-hover); }
+        .footer { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.8rem; }
+        @media (max-width: 600px) {
+            .input-group { flex-direction: column; }
+            .stats { flex-direction: column; gap: 0.5rem; }
+            .header h1 { font-size: 1.4rem; }
+        }
+    </style>
+</head>
+<body>
+    <!-- GitHub Corner -->
+    <a href="https://github.com/Lumivers/Lumi-Diff" target="_blank" class="github-corner"
+        aria-label="View source on GitHub">
+        <svg width="80" height="80" viewBox="0 0 250 250"
+            style="fill:var(--bg-header); color:var(--text); position: absolute; top: 0; border: 0; right: 0;" aria-hidden="true">
+            <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path>
+            <path
+                d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2"
+                fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path>
+            <path
+                d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.6,137.7 141.0,140.2 141.0,140.2 C141.0,140.2 145.8,139.5 149.4,135.8 C153.0,132.2 155.4,131.2 155.4,131.2 C158.1,128.8 160.0,128.8 160.0,128.8 C163.6,129.7 165.0,128.8 165.0,128.8 C166.2,127.6 165.0,125.0 165.0,125.0 C163.8,122.4 160.0,122.4 160.0,122.4 C156.8,122.4 155.2,125.0 155.2,125.0 C153.0,128.6 155.6,131.2 155.6,131.2 C162.0,139.4 171.6,137.0 176.0,135.4 C177.4,130.4 180.0,127.0 180.0,127.0 C182.4,123.0 185.0,122.4 185.0,122.4 C187.8,122.4 189.6,124.4 189.6,124.4 C193.0,129.6 193.0,137.0 193.0,137.0 C193.0,140.2 195.0,142.0 195.0,142.0 C197.0,142.0 199.0,140.2 199.0,140.2 C199.0,137.0 199.0,129.6 195.0,124.4 L149.4,135.8 C145.8,139.5 141.0,140.2 141.0,140.2 C141.0,140.2 139.6,137.7 141.0,136.5 L152.7,124.9 C156.7,120.9 157.9,116.9 157.7,114.1 C168.3,122.5 181.9,128.9 198.3,112.5 C203.0,107.8 205.1,102.4 205.4,96.6 C206.9,96.0 212.7,93.1 216.3,84.9 C216.3,84.9 213.8,80.2 200.1,77.6 C197.7,73.2 194.5,69.0 190.9,65.4 C187.2,61.8 183.1,58.6 178.8,56.2 C176.1,42.5 171.4,40.1 171.4,40.1 C163.2,43.6 160.3,49.4 159.7,51.0 C154.0,51.2 148.5,53.4 143.8,58.0 C127.5,74.4 133.8,88.0 142.2,98.6 C139.9,98.4 136.9,99.2 133.7,101.6 L119.8,115.4 C118.7,116.5 114.9,115.1 115.0,115.0"
+                fill="currentColor"></path>
+            </svg>
+            </a>
+    <style>
+        .github-corner:hover .octo-arm {
+            animation: octocat-wave 560ms ease-in-out
+        }
+    
+        @keyframes octocat-wave {
+    
+            0%,
+            100% {
+                transform: rotate(0)
+            }
+    
+            20%,
+            60% {
+                transform: rotate(-25deg)
+            }
+        }
+    
+        .github-corner:hover .octo-arm {
+            animation: none
+        }
+    </style>
+
+    <div class="header">
+        <h1>🔍 LumiDiff</h1>
+        <p>AI 代码审查工具 — 输入 GitHub PR 或 Commit URL，即刻获得智能审查报告</p>
+    </div>
+
+    <div class="input-section">
+        <form action="/analyze" method="POST" id="analyze-form">
+            <div class="input-group">
+                <input type="text" name="url" id="url-input"
+                       placeholder="https://github.com/owner/repo/pull/123"
+                       value="{{ request.form.url if request.form else '' }}"
+                       required>
+                <button type="submit" id="submit-btn">分析</button>
+            </div>
+        </form>
+    </div>
+
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>AI 正在分析代码变更，请稍候...</p>
+    </div>
+
+    {% if result %}
+    <div class="report">
+        <!-- Header Panel -->
+        <div class="panel">
+            <div class="panel-header">📊 LumiDiff Report</div>
+            <div class="stats">
+                <div class="stat-item">Files: <span class="stat-value">{{ result.diff.files|length }}</span></div>
+                <div class="stat-item">+<span class="file-add">{{ result.diff.total_additions }}</span>
+                     -<span class="file-del">{{ result.diff.total_deletions }}</span></div>
+                <div class="stat-item">Risks: <span class="stat-value">{{ result.risks|length }}</span></div>
+                {% if result.llm %}
+                <div class="stat-item">LLM: <span class="stat-value">{{ result.llm.elapsed_seconds }}s</span>
+                     ({{ result.llm.model_used }})</div>
+                {% endif %}
+                <div class="stat-item">耗时: <span class="stat-value">{{ result.elapsed }}s</span></div>
+            </div>
+        </div>
+
+        <!-- File Stats -->
+        {% if result.diff.files %}
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>File</th>
+                        <th style="text-align:right">+</th>
+                        <th style="text-align:right">-</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for f in result.diff.files|sort(attribute='additions', reverse=True) %}
+                    {% set total = f.additions + f.deletions %}
+                    <tr>
+                        <td class="{{ 'file-hot' if total > 50 else ('file-warm' if total > 20 else '') }}">
+                            {{ f.path }}
+                        </td>
+                        <td style="text-align:right" class="file-add">+{{ f.additions }}</td>
+                        <td style="text-align:right" class="file-del">-{{ f.deletions }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- Summary -->
+        {% if result.llm and result.llm.summary %}
+        <div class="summary">
+            <strong>Summary:</strong><br>
+            {{ result.llm.summary }}
+        </div>
+        {% endif %}
+
+        <!-- Risks -->
+        {% if result.risks %}
+        <div class="panel">
+            <div class="panel-header">
+                ⚠️ Risks
+                {% set rule_count = result.risks|selectattr('source', 'equalto', 'rule')|list|length %}
+                {% set llm_count = result.risks|length - rule_count %}
+                {% if rule_count %}<span class="sev-high">Rules: {{ rule_count }}</span>{% endif %}
+                {% if rule_count and llm_count %} | {% endif %}
+                {% if llm_count %}<span class="sev-med">LLM: {{ llm_count }}</span>{% endif %}
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Sev</th>
+                        <th>Location</th>
+                        <th>Description</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in result.risks %}
+                    {% set sev_class = 'sev-high' if r.severity == 'HIGH' else ('sev-med' if r.severity == 'MEDIUM' else 'sev-low') %}
+                    {% set conf_val = r.confidence|float(default=1.0) %}
+                    <tr{% if r.source == 'llm' and conf_val <= 0.6 %} style="opacity:0.5"{% endif %}>
+                        <td class="{{ sev_class }}">{{ r.severity }}</td>
+                        <td><code>{{ r.file }}:{{ r.line }}</code></td>
+                        <td>{{ r.message }}</td>
+                        <td>
+                            {% if r.source == 'rule' %}N/A (rule)
+                            {% elif conf_val < 0.8 %}{{ r.confidence }} <span class="uncertain">(uncertain)</span>
+                            {% else %}{{ r.confidence }}{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Fix Suggestions -->
+        {% set fixes = result.risks|selectattr('fix')|selectattr('fix', 'ne', '')|list %}
+        {% if fixes %}
+        <div class="fix-section">
+            <h3 style="color:#00d4ff; margin-bottom:1rem;">🔧 Fix Suggestions</h3>
+            {% for r in fixes %}
+            <div class="fix-item">
+                <div class="fix-header">
+                    <span class="{{ 'sev-high' if r.severity == 'HIGH' else ('sev-med' if r.severity == 'MEDIUM' else 'sev-low') }}">
+                        {{ r.severity }}
+                    </span>
+                    <code>{{ r.file }}:{{ r.line }}</code>
+                </div>
+                <div class="fix-message">{{ r.message }}</div>
+                <pre><code>{{ r.fix }}</code></pre>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- Commit Message -->
+        {% if result.llm and result.llm.commit_message %}
+        <div class="commit-section">
+            <h3>💬 Suggested commit message</h3>
+            <div class="commit-cmd" title="点击复制">git commit -m "{{ result.llm.commit_message }}"</div>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="footer">
+        LumiDiff — AI 代码审查工具 | Powered by <a href="https://github.com/Lumivers" target="_blank">Lumivers</a>
+    </div>
+
+    <script>
+        // Loading 动画
+        document.getElementById('analyze-form').addEventListener('submit', function() {
+            document.getElementById('submit-btn').disabled = true;
+            document.getElementById('submit-btn').textContent = '分析中...';
+            document.getElementById('loading').style.display = 'block';
+        });
+
+        // 点击复制 commit command
+        document.querySelectorAll('.commit-cmd').forEach(el => {
+            el.addEventListener('click', function() {
+                navigator.clipboard.writeText(this.textContent);
+                this.style.borderColor = '#44ff44';
+                setTimeout(() => this.style.borderColor = '#1a1a3e', 1000);
+            });
+        });
+    </script>
+</body>
+</html>

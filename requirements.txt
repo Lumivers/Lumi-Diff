@@ -1,0 +1,8 @@
+rich>=13.0
+requests>=2.28
+pydantic>=2.0
+fastapi
+uvicorn
+jinja2
+python-multipart
+-e .
