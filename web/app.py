@@ -155,9 +155,11 @@ async def api_analyze(url: str):
         if "/pull/" in url:
             diff = get_pr_diff(url, github_token=os.environ.get("GITHUB_TOKEN") or None)
             is_local = False
-        else:
+        elif "/commit/" in url or parse_commit_url(url):
             diff = get_commit_diff(url, github_token=os.environ.get("GITHUB_TOKEN") or None)
             is_local = False
+        else:
+            return JSONResponse({"error": f"无法识别 URL 格式：{url}"}, status_code=400)
 
         risks = scan_all(diff.files)
         llm_result = analyze(diff.raw_diff, is_local=is_local) if diff.files else None
