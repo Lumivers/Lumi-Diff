@@ -1,5 +1,7 @@
 import re
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -42,10 +44,60 @@ _RULE_MESSAGES = {
 }
 
 # patterns are pre-compiled per spec
-_RULES: list[tuple[str, re.Pattern, str]] = [
-    (rid, re.compile(pat, re.MULTILINE | re.DOTALL), sev)
+_RULES: list[tuple[str, re.Pattern, str, str]] = [
+    (rid, re.compile(pat, re.MULTILINE | re.DOTALL), sev, _RULE_MESSAGES.get(rid, rid))
     for rid, pat, sev in _RULE_SPECS
 ]
+
+# -- custom rules from .lumidiff.toml --
+
+_custom_rules: list[tuple[str, re.Pattern, str, str]] | None = None  # (id, pattern, severity, message)
+
+
+def _load_custom_rules() -> list[tuple[str, re.Pattern, str, str]]:
+    """Load custom rules from .lumidiff.toml."""
+    if sys.version_info >= (3, 11):
+        import tomllib
+    else:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return []
+
+    config_path = Path(".lumidiff.toml")
+    if not config_path.is_file():
+        return []
+
+    try:
+        with open(config_path, "rb") as f:
+            config = tomllib.load(f)
+    except Exception:
+        return []
+
+    rules = []
+    for item in config.get("rule", {}).get("custom", []):
+        rid = item.get("id", "CUSTOM")
+        pattern = item.get("pattern", "")
+        severity = item.get("severity", "MEDIUM").upper()
+        message = item.get("message", f"自定义规则 {rid} 命中")
+        if pattern:
+            try:
+                compiled = re.compile(pattern, re.MULTILINE | re.DOTALL)
+                rules.append((rid, compiled, severity, message))
+            except re.error:
+                pass
+    return rules
+
+
+def get_rules() -> list[tuple[str, re.Pattern, str, str]]:
+    """Get all rules (built-in + custom)."""
+    global _custom_rules
+    if _custom_rules is None:
+        _custom_rules = _load_custom_rules()
+
+    all_rules = list(_RULES)
+    all_rules.extend(_custom_rules)
+    return all_rules
 
 
 # -- public API --
@@ -62,14 +114,14 @@ def scan(filepath: str, patch: str) -> list[Risk]:
     if not added_lines:
         return results
 
-    for rule_id, pattern, severity in _RULES:
+    for rule_id, pattern, severity, message in get_rules():
         for lineno, content in added_lines:
             if pattern.search(content):
                 results.append(Risk(
                     file=filepath,
                     line=lineno,
                     severity=severity,
-                    message=_RULE_MESSAGES[rule_id],
+                    message=message,
                     rule_id=rule_id,
                 ))
 
