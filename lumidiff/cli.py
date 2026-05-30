@@ -3,6 +3,11 @@ import json
 import os
 import sys
 
+# Windows 终端默认 GBK，强制 UTF-8 避免中文乱码
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+
 from lumidiff.diff_source import get_staged_diff, get_pr_diff, get_commit_diff
 from lumidiff.rule_engine import scan_all
 from lumidiff.llm_client import analyze, DEFAULT_MODEL, DEFAULT_API_BASE
