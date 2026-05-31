@@ -8,7 +8,7 @@
 
 ---
 > 在线体验：https://web-production-3a59c.up.railway.app/
-> （因 API 额度和 Railway 免费 tier 限制，此链接将在 2026.06.07 后失效）
+> （因 API 额度和 Railway 免费 tier 限制，此链接将在 2026.06.07 后失效。若出现打不开等问题请使用科学上网）
 ## 效果展示
 
 ```
