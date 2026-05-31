@@ -1,5 +1,5 @@
 # LumiDiff — AI 代码审查 CLI 工具
-
+demo演示视频：https://www.bilibili.com/video/BV1W8VJ6hEzN
 > 输入 GitHub PR 链接或本地变更，输出结构化审查报告：变更摘要 / 风险识别 / Review 建议。
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
