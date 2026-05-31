@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from lumidiff.diff_source import FileDiff
 
 
 @dataclass
@@ -148,9 +154,8 @@ def scan(filepath: str, patch: str) -> list[Risk]:
     return results
 
 
-def scan_all(files: list["FileDiff"]) -> list[Risk]:
+def scan_all(files: list[FileDiff]) -> list[Risk]:
     """扫描一组 FileDiff 对象。"""
-    from lumidiff.diff_source import FileDiff
     all_risks: list[Risk] = []
     for fd in files:
         if fd.patch:
