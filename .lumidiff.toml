@@ -1,0 +1,22 @@
+# LumiDiff 自定义规则配置
+# 添加项目特定的正则规则，与内置规则同流程处理
+
+# 示例规则（取消注释即可启用）：
+
+# [[rule.custom]]
+# id = "no-console-log"
+# pattern = "console\.log\s*\("
+# severity = "LOW"
+# message = "避免在提交中包含 console.log"
+
+# [[rule.custom]]
+# id = "no-internal-import"
+# pattern = "from\s+internal\."
+# severity = "HIGH"
+# message = "禁止引用 internal 包"
+
+# [[rule.custom]]
+# id = "no-todo-in-prod"
+# pattern = "#\s*TODO"
+# severity = "LOW"
+# message = "生产代码中不应残留 TODO"

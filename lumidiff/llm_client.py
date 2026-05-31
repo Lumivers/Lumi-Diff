@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 
-# -- Pydantic models for LLM response --
+# -- LLM 响应的 Pydantic 模型 --
 
 class _Suggestion(BaseModel):
     file: str
@@ -27,7 +27,7 @@ class _LLMResponse(BaseModel):
     commit_message: str | None = None
 
 
-# -- result dataclass --
+# -- 结果数据结构 --
 
 @dataclass
 class LLMResult:
@@ -36,16 +36,16 @@ class LLMResult:
     commit_message: str | None = None
     elapsed_seconds: float = 0.0
     model_used: str = ""
-    raw_text: str = ""      # fallback when JSON parse fails
+    raw_text: str = ""      # JSON 解析失败时的原始文本
     parse_error: str | None = None
 
 
-# -- config --
+# -- 配置 --
 
 DEFAULT_MODEL = "mimo-v2.5-pro"
 DEFAULT_API_BASE = "https://api.xiaomimimo.com/v1"
 
-# model -> (api_base, env_key_for_api_key)
+# 模型 -> (api_base, 环境变量名)
 _MODEL_REGISTRY = {
     "deepseek-v4-pro": ("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
     "mimo-v2.5-pro": ("https://api.xiaomimimo.com/v1", "MIMO_API_KEY"),
@@ -53,14 +53,14 @@ _MODEL_REGISTRY = {
 
 
 def _resolve_api_key(model: str) -> str:
-    """Read the provider's standard API key env var."""
+    """读取模型对应的 API Key 环境变量。"""
     if model in _MODEL_REGISTRY:
         return os.environ.get(_MODEL_REGISTRY[model][1], "")
     return ""
 
 
 def _resolve_api_base(model: str) -> str:
-    """Use env override, then model registry, then default."""
+    """解析 API Base URL：环境变量 > 模型注册表 > 默认值。"""
     env = os.environ.get("LUMIDIFF_API_BASE")
     if env:
         return env
@@ -135,21 +135,21 @@ def _build_system_prompt(is_local_mode: bool) -> str:
 
 
 def _sanitize_json(text: str) -> str:
-    """Fix common LLM JSON output issues: markdown fences, invalid escapes."""
+    """修复 LLM JSON 输出的常见问题：markdown 包裹、非法转义。"""
     text = text.strip().removeprefix("```json").removesuffix("```").strip()
-    # fix invalid JSON escapes: \s, \p, \c etc. that aren't valid JSON
+    # 修复非法 JSON 转义：\s, \p, \c 等不在 JSON 规范中的转义
     text = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', text)
     return text
 
 
-# -- API call --
+# -- API 调用 --
 
 def analyze(
     diff_text: str,
     model: str | None = None,
     is_local: bool = False,
 ) -> LLMResult:
-    """Send diff to LLM and return structured result."""
+    """将 diff 发送给 LLM 并返回结构化结果。"""
     if model is None:
         model = os.environ.get("LUMIDIFF_MODEL", DEFAULT_MODEL)
     api_key = _resolve_api_key(model)
@@ -206,7 +206,7 @@ def analyze(
     body = resp.json()
     content = body["choices"][0]["message"]["content"]
 
-    # parse JSON — retry once on failure
+    # 解析 JSON — 失败时重试一次
     for attempt in range(2):
         try:
             parsed = json.loads(content)
@@ -224,7 +224,7 @@ def analyze(
                 model_used=model,
             )
 
-    # unreachable
+    # 不可达
     return LLMResult(parse_error="unknown", elapsed_seconds=elapsed, model_used=model)
 
 

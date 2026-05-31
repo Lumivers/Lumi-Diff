@@ -7,7 +7,7 @@ from functools import lru_cache
 import requests
 
 
-# -- built-in file extension blacklist --
+# -- 内置文件扩展名黑名单 --
 IGNORED_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".webp",
     ".woff", ".woff2", ".ttf", ".eot", ".otf",
@@ -32,10 +32,10 @@ IGNORED_PATTERNS = [
     re.compile(r"\.terraform\.lock\..*"),
 ]
 
-# -- .lumignore support --
+# -- .lumignore 支持 --
 
 def _load_lumignore() -> list[str]:
-    """Load patterns from .lumignore file in current directory or git root."""
+    """从 .lumignore 文件加载过滤规则（当前目录或 git 根目录）。"""
     patterns: list[str] = []
     for candidate in [Path(".lumignore"), Path(_git_root()) / ".lumignore"]:
         if candidate.is_file():
@@ -48,7 +48,7 @@ def _load_lumignore() -> list[str]:
 
 
 def _git_root() -> str:
-    """Get git repository root directory."""
+    """获取 git 仓库根目录。"""
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -62,7 +62,7 @@ def _git_root() -> str:
 
 
 def _match_lumignore(filepath: str, patterns: list[str]) -> bool:
-    """Check if filepath matches any .lumignore pattern (gitignore-style)."""
+    """检查文件路径是否匹配 .lumignore 规则（兼容 gitignore 语法）。"""
     from fnmatch import fnmatch
     path = filepath.replace("\\", "/")
     for pat in patterns:
@@ -98,7 +98,7 @@ def should_ignore(filepath: str) -> bool:
     return False
 
 
-# -- dataclasses --
+# -- 数据结构 --
 
 @dataclass
 class FileDiff:
@@ -120,7 +120,7 @@ class DiffResult:
     total_deletions: int = 0
 
 
-# -- GitHub PR URL parsing --
+# -- GitHub URL 解析 --
 
 _PR_URL_RE = re.compile(
     r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)"
@@ -145,10 +145,10 @@ def parse_commit_url(url: str) -> tuple[str, str, str] | None:
     return m.group("owner"), m.group("repo"), m.group("sha")
 
 
-# -- diff sources --
+# -- diff 获取 --
 
 def get_staged_diff(context_lines: int = 10) -> DiffResult:
-    """Run git diff --staged and return DiffResult."""
+    """执行 git diff --staged 获取暂存区变更。"""
     cmd = ["git", "diff", "--staged", f"-U{context_lines}"]
     result = subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -178,7 +178,7 @@ def get_commit_diff(
     github_token: str | None = None,
     context_lines: int = 10,
 ) -> DiffResult:
-    """Fetch a commit's diff. Supports GitHub URL or local git SHA/ref."""
+    """获取 commit 的 diff。支持 GitHub URL 或本地 git SHA/ref。"""
     parsed = parse_commit_url(commit_ref)
     if parsed:
         owner, repo, sha = parsed
@@ -188,7 +188,7 @@ def get_commit_diff(
 
 
 def _get_local_commit_diff(ref: str, context_lines: int = 10) -> DiffResult:
-    """Get diff for a local commit via git show."""
+    """通过 git show 获取本地 commit 的 diff。"""
     cmd = ["git", "show", ref, f"-U{context_lines}"]
     result = subprocess.run(
         cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -214,7 +214,7 @@ def _get_local_commit_diff(ref: str, context_lines: int = 10) -> DiffResult:
 def _get_github_commit_diff(
     owner: str, repo: str, sha: str, github_token: str | None,
 ) -> DiffResult:
-    """Fetch a single commit's diff via GitHub API."""
+    """通过 GitHub API 获取单个 commit 的 diff。"""
     headers = {
         "Accept": "application/vnd.github.v3+json",
         "User-Agent": "lumidiff",
@@ -234,7 +234,7 @@ def get_pr_diff(
     pr_url: str,
     github_token: str | None = None,
 ) -> DiffResult:
-    """Fetch PR diff via GitHub API. Returns DiffResult."""
+    """通过 GitHub API 获取 PR diff。"""
     parsed = parse_pr_url(pr_url)
     if not parsed:
         raise ValueError(f"无法解析 PR URL: {pr_url}")
@@ -269,10 +269,10 @@ def _fetch_pr_files(owner: str, repo: str, pr_number: int, headers: tuple[tuple[
     return all_files
 
 
-# -- helpers --
+# -- 辅助函数 --
 
 def _build_diff_result_from_github_files(files_data: list[dict]) -> DiffResult:
-    """Convert GitHub API files array into DiffResult."""
+    """将 GitHub API 返回的 files 数组转换为 DiffResult。"""
     all_files: list[FileDiff] = []
     truncated: list[str] = []
 
@@ -307,7 +307,7 @@ def _build_diff_result_from_github_files(files_data: list[dict]) -> DiffResult:
 
 
 def _parse_diff_files(raw: str) -> list[FileDiff]:
-    """Parse files from unified diff output."""
+    """从 unified diff 输出中解析文件列表。"""
     files: list[FileDiff] = []
     current_file: FileDiff | None = None
     current_patch: list[str] = []
@@ -355,7 +355,7 @@ def _parse_diff_files(raw: str) -> list[FileDiff]:
 
 
 def _render_unified_diff(files: list[FileDiff]) -> str:
-    """Build a single unified diff string from FileDiff list."""
+    """将 FileDiff 列表拼接为 unified diff 字符串。"""
     parts = []
     for f in files:
         if f.patch:
@@ -372,7 +372,7 @@ def _render_unified_diff(files: list[FileDiff]) -> str:
 
 
 def _next_page(headers) -> str | None:
-    """Extract next page URL from Link header (requests.response.headers)."""
+    """从 Link 响应头中提取下一页 URL。"""
     link = headers.get("Link", "")
     for part in link.split(","):
         if 'rel="next"' in part:

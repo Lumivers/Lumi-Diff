@@ -20,15 +20,15 @@ def render(
     llm: LLMResult | None,
     args,
 ) -> None:
-    """Render the full LumiDiff report."""
+    """渲染完整的 LumiDiff 报告。"""
     console = Console()
 
-    # -- json mode --
+    # -- JSON 模式 --
     if args.json:
         _render_json(diff, risks, llm)
         return
 
-    # -- header panel --
+    # -- 头部面板 --
     file_count = len(diff.files)
     risk_count = len(risks)
     llm_info = ""
@@ -48,7 +48,7 @@ def render(
     )
     console.print(header)
 
-    # -- file stats table --
+    # -- 文件统计表 --
     if diff.files:
         ftable = Table(
             show_header=True, header_style="bold",
@@ -77,14 +77,14 @@ def render(
         console.print(ftable)
         console.print()
 
-    # -- summary --
+    # -- 变更摘要 --
     if llm and llm.summary and not llm.parse_error:
         console.print(Markdown(llm.summary))
         console.print()
 
-    # -- risks table --
+    # -- 风险表格 --
     if risks:
-        # split: visible (confidence > 0.6 or rule-based) vs hidden
+        # 按置信度分组：可见（>0.6 或规则引擎）vs 隐藏
         show_all = getattr(args, "show_all", False)
         visible, hidden = _split_by_confidence(risks, show_all)
 
@@ -116,7 +116,7 @@ def render(
             if r.source == "rule":
                 conf_text = "N/A (rule)"
 
-            # mark low-confidence as uncertain
+            # 低置信度标记为不确定
             is_low_conf = False
             if r.source == "llm":
                 try:
@@ -127,7 +127,7 @@ def render(
                     pass
 
             row_style = "dim" if is_low_conf else ""
-            # code snippet — truncate for table display
+            # 代码片段 — 表格中截断显示
             snippet_text = ""
             if r.code_snippet:
                 snip = r.code_snippet.strip()
@@ -149,7 +149,7 @@ def render(
                 f"[dim]... {len(hidden)} 个低置信度建议已隐藏，使用 --show-all 查看全部[/dim]"
             )
 
-        # -- fix suggestions (only for visible risks) --
+        # -- 修复建议（仅显示可见风险） --
         fixes = [r for r in visible if r.fix]
         if fixes:
             console.print()
@@ -161,12 +161,12 @@ def render(
                     f"[underline]{r.file}:{r.line}[/underline]"
                 )
                 console.print(f"  {r.message}")
-                # show current code snippet
+                # 显示当前问题代码
                 if r.code_snippet:
                     lang = _detect_lang(r.file)
                     console.print(f"  [dim]Current:[/dim]")
                     console.print(Syntax(r.code_snippet.strip(), lang, theme="monokai", padding=(0, 2)))
-                # strip markdown fences and render with syntax highlighting
+                # 去掉 markdown 代码围栏并语法高亮渲染
                 fix_text = _strip_code_fences(r.fix)
                 if _looks_like_code(fix_text):
                     lang = _detect_lang(r.file)
@@ -179,7 +179,7 @@ def render(
     elif not risks:
         console.print("[dim]No risks detected.[/dim]")
 
-    # -- commit message hint --
+    # -- commit message 建议 --
     if llm and llm.commit_message:
         high_risks = [r for r in risks if r.severity.upper() == "HIGH"]
         if high_risks:
@@ -189,13 +189,13 @@ def render(
         console.print()
         console.print("[bold]Suggested commit message:[/bold]")
         console.print(f"  {llm.commit_message}")
-        # show ready-to-copy git commit command
+        # 显示可复制的 git commit 命令
         escaped_msg = llm.commit_message.replace('"', '\\"')
         console.print()
         console.print("[dim]复制执行：[/dim]")
         console.print(f"  [cyan]git commit -m \"{escaped_msg}\"[/cyan]")
 
-    # -- skipped / truncated --
+    # -- 跳过/截断文件 --
     if diff.skipped_files:
         console.print()
         console.print(
@@ -211,7 +211,7 @@ def render(
             f"analysis degraded): {len(diff.truncated_files)}[/yellow]"
         )
 
-    # -- parse warning --
+    # -- 解析警告 --
     if llm and llm.parse_error and "missing" not in llm.parse_error:
         console.print()
         console.print(f"[yellow]LLM parse warning: {llm.parse_error}[/yellow]")
@@ -255,7 +255,7 @@ def _render_json(diff: DiffResult, risks: list[Risk], llm: LLMResult | None) -> 
 def _estimate_review_minutes(
     diff: DiffResult, risks: list[Risk],
 ) -> tuple[int, int]:
-    """Estimate review time in minutes based on diff size and risk count."""
+    """根据 diff 大小和风险数量估算审查时间（分钟）。"""
     lang_coeff = {
         ".py": 0.5, ".js": 0.4, ".ts": 0.4, ".jsx": 0.4, ".tsx": 0.4,
         ".go": 0.3, ".rs": 0.4, ".java": 0.5, ".kt": 0.5,
@@ -283,13 +283,13 @@ def _severity_style(severity: str) -> tuple[str, str]:
 def _split_by_confidence(
     risks: list[Risk], show_all: bool,
 ) -> tuple[list[Risk], list[Risk]]:
-    """Split risks into visible and hidden based on confidence threshold."""
+    """按置信度阈值将风险分为可见和隐藏两组。"""
     if show_all:
         return risks, []
     visible: list[Risk] = []
     hidden: list[Risk] = []
     for r in risks:
-        # rule-based risks are always visible
+        # 规则引擎的风险始终可见
         if r.source == "rule":
             visible.append(r)
             continue
@@ -305,7 +305,7 @@ def _split_by_confidence(
 
 
 def _strip_code_fences(text: str) -> str:
-    """Remove ```lang ... ``` markdown fences."""
+    """去掉 ```lang ... ``` markdown 代码围栏。"""
     text = text.strip()
     text = re.sub(r"^```\w*\n?", "", text)
     text = re.sub(r"\n?```$", "", text)
@@ -313,7 +313,7 @@ def _strip_code_fences(text: str) -> str:
 
 
 def _looks_like_code(text: str) -> bool:
-    """Heuristic: if it has multiple lines or indentation, treat as code."""
+    """启发式判断：多行或有缩进则视为代码。"""
     lines = text.split("\n")
     if len(lines) >= 2:
         return True
@@ -323,7 +323,7 @@ def _looks_like_code(text: str) -> bool:
 
 
 def _detect_lang(filepath: str) -> str:
-    """Guess language from file extension."""
+    """根据文件扩展名推断编程语言。"""
     ext_map = {
         ".py": "python", ".js": "javascript", ".ts": "typescript",
         ".jsx": "jsx", ".tsx": "tsx", ".go": "go", ".rs": "rust",

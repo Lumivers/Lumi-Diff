@@ -15,26 +15,26 @@ from lumidiff.reporter import render
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add shared flags to a subcommand parser."""
+    """为子命令解析器添加通用参数。"""
     parser.add_argument(
         "--model", type=str, default=None,
-        help=f"LLM model name (default: {DEFAULT_MODEL})",
+        help=f"LLM 模型名称（默认: {DEFAULT_MODEL}）",
     )
     parser.add_argument(
         "--json", action="store_true",
-        help="Output raw JSON instead of rich rendering",
+        help="输出原始 JSON（替代 rich 渲染）",
     )
     parser.add_argument(
         "--no-llm", action="store_true",
-        help="Skip LLM analysis, only run rule engine",
+        help="跳过 LLM 分析，仅运行规则引擎",
     )
     parser.add_argument(
         "--ci", action="store_true",
-        help="CI mode: plain text output, exit 1 on HIGH risks",
+        help="CI 模式：纯文本输出，HIGH 风险时退出码为 1",
     )
     parser.add_argument(
         "--context-lines", type=int, default=10,
-        help="Lines of context around hunks (default: 10)",
+        help="hunk 上下文行数（默认: 10）",
     )
     parser.add_argument(
         "--show-all", action="store_true",
@@ -107,24 +107,24 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # no subcommand → show help
+    # 无子命令 → 显示帮助
     if args.command is None:
         parser.print_help()
         return
 
-    # handle subcommands
+    # 处理子命令
     if args.command == "model":
         _show_or_switch_model(args)
         return
 
-    # the rest: local / commit / pr
+    # 其余：local / commit / pr
     _run_analysis(args)
 
 
 def _run_analysis(args) -> None:
     token = os.environ.get("GITHUB_TOKEN", "")
 
-    # 1. get diff
+    # 1. 获取 diff
     if args.command == "pr":
         diff = get_pr_diff(args.url, github_token=token or None)
     elif args.command == "commit":
@@ -135,7 +135,7 @@ def _run_analysis(args) -> None:
     else:  # local
         diff = get_staged_diff(context_lines=args.context_lines)
 
-        # auto-stage: --stage flag or interactive prompt
+        # 自动暂存：--stage 参数或交互式提示
         if not diff.files and not diff.skipped_files:
             if args.stage:
                 _do_git_add()
@@ -166,10 +166,10 @@ def _run_analysis(args) -> None:
                 print("没有找到可分析的代码变更。")
         return
 
-    # 2. rule engine
+    # 2. 规则引擎
     risks = scan_all(diff.files)
 
-    # 3. LLM
+    # 3. LLM 分析
     llm_result = None
     if not args.no_llm:
         diff_text = diff.context_diff or diff.raw_diff
@@ -179,7 +179,7 @@ def _run_analysis(args) -> None:
             is_local=(args.command == "local"),
         )
 
-    # 4. merge LLM suggestions into risks (de-duplicate)
+    # 4. 合并 LLM 建议到风险列表（去重）
     if llm_result and llm_result.suggestions:
         rule_keys = {(r.file, r.line, r.message) for r in risks}
         for s in llm_result.suggestions:
@@ -188,7 +188,7 @@ def _run_analysis(args) -> None:
                 risks.append(s)
         risks.sort(key=lambda r: ({"HIGH": 0, "MEDIUM": 1, "LOW": 2}.get(r.severity, 9), r.file))
 
-    # 5. render
+    # 5. 渲染报告
     if args.ci:
         _ci_output(risks)
     else:

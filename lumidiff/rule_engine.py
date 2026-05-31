@@ -11,13 +11,13 @@ class Risk:
     severity: str          # HIGH / MEDIUM / LOW
     message: str
     rule_id: str
-    confidence: str = "N/A (rule)"  # rule-literal or LLM float
-    source: str = "rule"            # "rule" or "llm"
+    confidence: str = "N/A (rule)"  # 规则固定值或 LLM 浮点数
+    source: str = "rule"            # "rule" 或 "llm"
     fix: str = ""           # 修复建议
     code_snippet: str = ""  # 问题代码片段（从 diff 中提取）
 
 
-# -- rule definitions --
+# -- 规则定义 --
 
 _RULE_SPECS: list[tuple[str, str, str]] = [
     # (rule_id, pattern, severity) — 仅保留零误报规则
@@ -62,19 +62,19 @@ _RULE_MESSAGES = {
     "R006": "生产代码中残留调试打印，应替换为 logging 模块",
 }
 
-# patterns are pre-compiled per spec
+# 预编译所有规则的正则表达式
 _RULES: list[tuple[str, re.Pattern, str, str]] = [
     (rid, re.compile(pat, re.MULTILINE | re.DOTALL | re.IGNORECASE), sev, _RULE_MESSAGES.get(rid, rid))
     for rid, pat, sev in _RULE_SPECS
 ]
 
-# -- custom rules from .lumidiff.toml --
+# -- .lumidiff.toml 自定义规则 --
 
 _custom_rules: list[tuple[str, re.Pattern, str, str]] | None = None  # (id, pattern, severity, message)
 
 
 def _load_custom_rules() -> list[tuple[str, re.Pattern, str, str]]:
-    """Load custom rules from .lumidiff.toml."""
+    """从 .lumidiff.toml 加载自定义规则。"""
     if sys.version_info >= (3, 11):
         import tomllib
     else:
@@ -109,7 +109,7 @@ def _load_custom_rules() -> list[tuple[str, re.Pattern, str, str]]:
 
 
 def get_rules() -> list[tuple[str, re.Pattern, str, str]]:
-    """Get all rules (built-in + custom)."""
+    """获取所有规则（内置 + 自定义）。"""
     global _custom_rules
     if _custom_rules is None:
         _custom_rules = _load_custom_rules()
@@ -119,16 +119,16 @@ def get_rules() -> list[tuple[str, re.Pattern, str, str]]:
     return all_rules
 
 
-# -- public API --
+# -- 公开接口 --
 
 def scan(filepath: str, patch: str) -> list[Risk]:
-    """Scan a single file's patch for rule violations.
+    """扫描单个文件的 patch，检测规则违规。
 
-    Only checks added lines (lines starting with '+' in the hunk body).
+    仅检查新增行（hunk 中以 '+' 开头的行）。
     """
     results: list[Risk] = []
 
-    # extract line numbers for added lines
+    # 提取新增行的行号和内容
     added_lines = _extract_added_lines(patch)
     if not added_lines:
         return results
@@ -149,24 +149,24 @@ def scan(filepath: str, patch: str) -> list[Risk]:
 
 
 def scan_all(files: list["FileDiff"]) -> list[Risk]:
-    """Scan a collection of FileDiff objects."""
+    """扫描一组 FileDiff 对象。"""
     from lumidiff.diff_source import FileDiff
     all_risks: list[Risk] = []
     for fd in files:
         if fd.patch:
             all_risks.extend(scan(fd.path, fd.patch))
-    # sort: HIGH first, then MEDIUM, then LOW; within same severity by file
+    # 按严重度排序：HIGH > MEDIUM > LOW，同严重度按文件名排序
     order = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
     all_risks.sort(key=lambda r: (order.get(r.severity, 9), r.file, r.line))
     return all_risks
 
 
-# -- internal --
+# -- 内部函数 --
 
 def _extract_added_lines(patch: str) -> list[tuple[int, str]]:
-    """Parse unified diff to extract (new_line_number, content) for added lines.
+    """从 unified diff 中提取新增行的 (行号, 内容)。
 
-    Navigates hunks using the @@ -old,oldlen +new,newlen @@ headers.
+    通过 @@ -old,oldlen +new,newlen @@ 标头定位 hunk。
     """
     result: list[tuple[int, str]] = []
     new_line = 0
@@ -183,14 +183,14 @@ def _extract_added_lines(patch: str) -> list[tuple[int, str]]:
             continue
 
         if line.startswith("+"):
-            content = line[1:]  # strip the leading '+'
+            content = line[1:]  # 去掉行首的 '+'
             result.append((new_line, content))
             new_line += 1
         elif line.startswith("-"):
-            # deleted line — does not advance new_line counter
+            # 删除行 — 不推进 new_line 计数器
             pass
         else:
-            # context line or header — advances both old and new
+            # 上下文行或标头 — 同时推进新旧行号
             new_line += 1
 
     return result
